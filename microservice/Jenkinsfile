@@ -1,0 +1,50 @@
+pipeline {
+  agent any
+
+  environment {
+    REGISTRY = "docker.io/sivaraj7"
+    IMAGE_NAME = "microservice"
+    IMAGE_TAG = "latest"
+    KUBE_CONFIG = credentials('kubeconfig-aws')  // stored in Jenkins credentials
+    DOCKER_CREDS = credentials('dockerhub-creds') // username+password
+  }
+
+  stages {
+    stage('Checkout') {
+      steps {
+        git branch: 'main', url: 'https://github.com/Sivaraj7/PROJECT/tree/main/microservice'
+      }
+    }
+
+    stage('Build App') {
+      steps {
+        sh 'mvn clean package -DskipTests'
+      }
+    }
+
+    stage('Build Docker Image') {
+      steps {
+        sh "docker build -t $REGISTRY/$IMAGE_NAME:$IMAGE_TAG ."
+      }
+    }
+
+    stage('Push Docker Image') {
+      steps {
+        withCredentials([usernamePassword(credentialsId: 'dockerhub-creds',
+                usernameVariable: 'DOCKER_USER',
+                passwordVariable: 'DOCKER_PASS')]) {
+          sh "echo $DOCKER_PASS | docker login -u $DOCKER_USER --password-stdin"
+          sh "docker push $REGISTRY/$IMAGE_NAME:$IMAGE_TAG"
+        }
+      }
+    }
+
+    stage('Deploy to Kubernetes') {
+      steps {
+        withKubeConfig([credentialsId: 'kubeconfig-aws']) {
+          sh "helm upgrade --install microservice ./charts/microservice --set image.repository=$REGISTRY/$IMAGE_NAME --set image.tag=$IMAGE_TAG"
+        }
+      }
+    }
+  }
+}
