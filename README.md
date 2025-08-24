@@ -57,5 +57,3 @@ aws eks --region us-east-1 update-kubeconfig --name microservice-cluster
 kubectl get nodes
 helm upgrade --install microservice ./charts/microservice --set image.repository=docker.io/sivaraj7/microservice --set image.tag=latest
 
-## 7. Resume Highlight
-"Built a CI/CD pipeline using Jenkins, Docker, Kubernetes, and Helm, deploying a Spring Boot microservice to Minikube locally and prepared configuration for AWS EKS."
