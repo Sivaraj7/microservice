@@ -1,0 +1,85 @@
+pipeline {
+  agent any
+
+  environment {
+    REGISTRY    = "docker.io/sivaraj7"
+    IMAGE_NAME  = "microservice"
+    DOCKERHUB_CRED_ID = "dockerhub-creds"
+  }
+
+  stages {
+    stage('Checkout') {
+      steps {
+        echo "Checking out source code"
+        git branch: 'main', url: 'https://github.com/Sivaraj7/microservice.git'
+      }
+    }
+
+    stage('Build App') {
+      steps {
+        echo "Building Spring Boot JAR"
+        script {
+          if (isUnix()) {
+            sh "./mvnw clean package -DskipTests"
+          } else {
+            bat "mvnw.cmd clean package -DskipTests"
+          }
+        }
+      }
+    }
+
+    stage('Compute Image Tag') {
+      steps {
+        script {
+          def sha = (env.GIT_COMMIT ?: "").take(7)
+          env.IMAGE_TAG = sha?.trim() ? sha : "latest"
+          echo "Using tag: ${env.IMAGE_TAG}"
+        }
+      }
+    }
+
+    stage('Build & Push Docker Image') {
+      steps {
+        script {
+          docker.withRegistry('https://index.docker.io/v1/', DOCKERHUB_CRED_ID) {
+            def img = docker.build("${REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG}")
+            img.push()
+            img.push('latest')
+          }
+        }
+      }
+    }
+
+    stage('Deploy to Kubernetes (Helm)') {
+      steps {
+        script {
+          if (isUnix()) {
+            sh """
+              helm upgrade --install microservice ./charts/microservice \
+                --set image.repository=${REGISTRY}/${IMAGE_NAME} \
+                --set image.tag=${IMAGE_TAG}
+              kubectl rollout status deploy/microservice-microservice --timeout=120s || true
+            """
+          } else {
+            bat """
+              helm upgrade --install microservice .\\charts\\microservice ^
+                --set image.repository=${REGISTRY}\\${IMAGE_NAME} ^
+                --set image.tag=${IMAGE_TAG}
+            """
+            bat 'kubectl rollout status deploy/microservice-microservice --timeout=120s || ver>nul'
+          }
+        }
+      }
+    }
+  }
+
+  post {
+    success {
+      echo "Deployed image: ${REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG}"
+      echo "Access app via: minikube service microservice --url"
+    }
+    failure {
+      echo "Build failed. Check logs."
+    }
+  }
+}
